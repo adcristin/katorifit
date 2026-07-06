@@ -1,0 +1,15 @@
+{
+  "name": "KatoriFit",
+  "short_name": "KatoriFit",
+  "description": "Log workouts, track progress, stay consistent.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf6ef",
+  "theme_color": "#e05a2b",
+  "icons": [
+    { "src": "/app/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/app/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

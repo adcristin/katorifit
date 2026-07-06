@@ -1,0 +1,14 @@
+[server]
+enableStaticServing = true
+enableCORS = false
+enableXsrfProtection = true
+address = "0.0.0.0"
+port = 8501
+
+[theme]
+base = "light"
+primaryColor = "#e05a2b"
+backgroundColor = "#faf6ef"
+secondaryBackgroundColor = "#f0e9dc"
+textColor = "#1a1a1a"
+font = "sans serif"
