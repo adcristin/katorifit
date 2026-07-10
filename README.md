@@ -50,6 +50,22 @@ cp .env.example .env    # fill in SUPABASE_URL and SUPABASE_ANON_KEY
 Get your Supabase URL + anon key from your Supabase project → Settings → API.
 Enable **Email** auth in Authentication → Providers.
 
+### Making your data permanent (recommended for any real deployment)
+By default, this app stores logged data (profile, food/fasting/activity
+logs, weight, workouts) in a local SQLite file at `data/katorifit.db`. That's
+fine for local development, but most free hosts (including Streamlit
+Community Cloud) have **ephemeral filesystems** — that file gets wiped on
+every redeploy or restart. Your Supabase login always persists regardless;
+it's your *logged data* that needs this extra step.
+
+To make logged data permanent, point the app at your Supabase project's own
+Postgres database instead:
+1. In your Supabase project → **Settings → Database → Connection string → URI**
+2. Add it to your `.env` as `DATABASE_URL=postgresql://...`
+3. That's it — `init_db()` detects `DATABASE_URL` and switches to Postgres
+   automatically, creating tables (and migrating any existing schema) on
+   first run. Leave `DATABASE_URL` unset to keep using local SQLite.
+
 ## 2. Run — three ways
 
 ### Local
@@ -65,7 +81,10 @@ then open `http://<your-computer-ip>:8501` on the phone.
 ### Streamlit Community Cloud (recommended for phone install)
 1. Push this repo to GitHub.
 2. Go to https://share.streamlit.io, connect the repo, pick `app.py`.
-3. Add `SUPABASE_URL` and `SUPABASE_ANON_KEY` under **Secrets**.
+3. Add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and (recommended) `DATABASE_URL`
+   under **Secrets** — without `DATABASE_URL`, logged data resets whenever
+   the app redeploys or sleeps from inactivity, since this host's filesystem
+   is ephemeral.
 4. You get a free HTTPS URL — needed for PWA install.
 
 ### Docker
@@ -115,11 +134,12 @@ katorifit/
 ```
 
 ## Note on existing databases
-If you already have a `data/katorifit.db` from an earlier version of this
-app, `init_db()` migrates it in place on next run — it adds the new profile
-columns (`gender`, `activity_label`, `calorie_target_override`) with safe
-defaults and creates the new `daily_logs`/`weight_history` tables. Your
-existing profiles and workouts are preserved.
+If you already have data in an earlier version of this app — either a local
+`data/katorifit.db` or a Postgres database from before the `gender`/
+`activity_label`/`calorie_target_override` fields existed — `init_db()`
+migrates it in place on next run, adding the new profile columns with safe
+defaults and creating the new `daily_logs`/`weight_history` tables. Your
+existing profiles and workouts are preserved either way.
 
 ## License
 
