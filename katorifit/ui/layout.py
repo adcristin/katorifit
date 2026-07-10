@@ -38,7 +38,7 @@ h1, h2, h3 { letter-spacing: -0.01em; }
   background: #fff; border: 1px solid #ece5d7; border-radius: 16px;
   padding: 1rem 1.1rem; margin-bottom: 0.7rem;
 }
-.kf-metric-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.kf-metric-row { display: flex; gap: 0.6rem; flex-wrap: wrap; } [data-testid="InputInstructions"] { display: none !important; }
 @media (max-width: 640px) {
   .block-container { padding-left: 0.9rem; padding-right: 0.9rem; }
   h1 { font-size: 1.6rem; }
