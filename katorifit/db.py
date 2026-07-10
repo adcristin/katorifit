@@ -1,4 +1,17 @@
-"""SQLite persistence, scoped by Supabase user id."""
+"""Persistence, scoped by Supabase user id.
+
+Uses Postgres (e.g. a Supabase project's database) when DATABASE_URL is set
+— this is what makes logged data survive redeploys on hosts with ephemeral
+filesystems, like Streamlit Community Cloud. Falls back to local SQLite
+when DATABASE_URL isn't set, so local development still works with zero
+extra setup.
+
+All query/business-logic functions below (get_profile, save_log, etc.) are
+written once and work unmodified against either backend — see _CompatCursor,
+which translates the SQLite-style '?' placeholders used throughout this file
+into Postgres's '%s' style. Only init_db()'s DDL branches between the two,
+where their schema syntax genuinely differs (autoincrement, introspection).
+"""
 from __future__ import annotations
 
 import os
@@ -10,7 +23,15 @@ from typing import Iterator, List, Optional
 
 from .models import DailyLog, Profile, WeightEntry, Workout
 
-DB_PATH = Path(os.environ.get("KATORIFIT_DB", "data/katorifit.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL")  # Postgres, e.g. Supabase connection string
+DB_SSLMODE = os.environ.get("DATABASE_SSLMODE", "require")  # Supabase needs SSL; override for local test DBs
+DB_PATH = Path(os.environ.get("KATORIFIT_DB", "data/katorifit.db"))  # SQLite fallback for local dev
+
+BACKEND = "postgres" if DATABASE_URL else "sqlite"
+
+if BACKEND == "postgres":
+    import psycopg2
+    import psycopg2.extras
 
 _DAILY_LOG_FIELDS = [
     "roti", "protein", "katori", "eggs", "fats", "steps",
@@ -19,7 +40,37 @@ _DAILY_LOG_FIELDS = [
 ]
 
 
-def _connect() -> sqlite3.Connection:
+class _CompatCursor:
+    """Wraps a DB-API cursor so the SQLite-style '?' placeholders used
+    throughout this file also work unmodified against Postgres (which
+    expects '%s'). Always returns itself from execute() so the existing
+    `cur.execute(...).fetchall()` chaining style works on both backends —
+    psycopg2's cursor.execute() returns None, unlike sqlite3's."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, query: str, params=()) -> "_CompatCursor":
+        if BACKEND == "postgres":
+            query = query.replace("?", "%s")
+        self._cursor.execute(query, params)
+        return self
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+def _connect():
+    if BACKEND == "postgres":
+        return psycopg2.connect(
+            DATABASE_URL, sslmode=DB_SSLMODE, cursor_factory=psycopg2.extras.RealDictCursor
+        )
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -28,10 +79,10 @@ def _connect() -> sqlite3.Connection:
 
 
 @contextmanager
-def _cursor() -> Iterator[sqlite3.Cursor]:
+def _cursor() -> Iterator[_CompatCursor]:
     conn = _connect()
     try:
-        yield conn.cursor()
+        yield _CompatCursor(conn.cursor())
         conn.commit()
     finally:
         conn.close()
@@ -52,7 +103,13 @@ def init_db() -> None:
             """
         )
         # Migration: add newer profile columns if this DB predates them.
-        existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(profiles)").fetchall()}
+        if BACKEND == "postgres":
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'profiles'"
+            )
+            existing_cols = {row["column_name"] for row in cur.fetchall()}
+        else:
+            existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(profiles)").fetchall()}
         for col, ddl in [
             ("gender", "TEXT DEFAULT 'Male'"),
             ("activity_label", "TEXT DEFAULT 'Sedentary / College Student (BMR x 1.2)'"),
@@ -61,10 +118,11 @@ def init_db() -> None:
             if col not in existing_cols:
                 cur.execute(f"ALTER TABLE profiles ADD COLUMN {col} {ddl}")
 
+        id_ddl = "SERIAL PRIMARY KEY" if BACKEND == "postgres" else "INTEGER PRIMARY KEY AUTOINCREMENT"
         cur.execute(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS workouts (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                id            {id_ddl},
                 user_id       TEXT NOT NULL,
                 date          TEXT NOT NULL,
                 type          TEXT NOT NULL,
@@ -208,7 +266,7 @@ def delete_workout(user_id: str, workout_id: int) -> None:
 
 # ---------- Daily logs (Hand & Katori food, fasting, activity) ----------
 
-def _row_to_daily_log(row: sqlite3.Row) -> DailyLog:
+def _row_to_daily_log(row) -> DailyLog:
     return DailyLog(
         user_id=row["user_id"],
         log_date=row["log_date"],
